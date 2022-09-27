@@ -29,6 +29,7 @@ from mathutils import Vector
 from bpy.types import Operator
 from bpy.props import FloatProperty
 from bpy_extras.object_utils import AddObjectHelper, object_data_add
+import warnings
 
 
 def element_listener(element, obj):
@@ -96,6 +97,7 @@ class AddElementOpening(bpy.types.Operator):
         local_location = voided_obj.matrix_world.inverted() @ context.scene.cursor.location
         raycast = voided_obj.closest_point_on_mesh(local_location, distance=0.01)
         if not raycast[0]:
+            warnings.warn("Unable to raycast the voided object from the cursor location")
             return {"FINISHED"}
 
         if filling_obj:
@@ -121,18 +123,21 @@ class AddElementOpening(bpy.types.Operator):
         return {"FINISHED"}
 
     def get_voided_building_element(self, context):
-        obj = None
         if self.voided_building_element:
             obj = bpy.data.objects.get(self.voided_building_element)
         else:
             total_selected = len(context.selected_objects)
-            if total_selected == 1 or total_selected == 2:
+            if total_selected in [1, 2]:
                 obj = context.active_object
+            else:
+                warnings.warn(f"{total_selected} selected objects. Element to be voided could not be determined.")
+                return
         if obj and obj.BIMObjectProperties.ifc_definition_id:
             return obj
+        else:
+            warnings.warn("Voided element could not be determined.")
 
     def get_filling_building_element(self, context):
-        obj = None
         if self.filling_building_element:
             obj = bpy.data.objects.get(self.filling_building_element)
         else:
@@ -142,6 +147,9 @@ class AddElementOpening(bpy.types.Operator):
                     obj = context.selected_objects[1]
                 else:
                     obj = context.selected_objects[0]
+            else:
+                warnings.warn(f"{total_selected} selected objects. Element to fill void could not be determined.")
+                return
         if obj and obj.BIMObjectProperties.ifc_definition_id:
             return obj
 

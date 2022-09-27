@@ -330,7 +330,18 @@ class Misc:
 
 @interface
 class Model:
-    pass
+    def get_active_constr_class(cls): pass
+    def get_active_relating_type_id(cls): pass
+    def get_ifc_class_entities(cls, ifc_class): pass
+    def get_relating_type_name_by_id(cls, ifc_class, relating_type_id): pass
+    def get_relating_type_id_by_name(cls, ifc_class, relating_type): pass
+    def new_constr_class_info(cls, ifc_class): pass
+    def get_constr_class_info(cls, ifc_class): pass
+    def new_constr_type_instance(cls, ifc_class, relating_type_id): pass
+    def remove_constr_type_object(cls, obj): pass
+    def assetize_object(cls, obj, ifc_class, relating_type): pass
+    def assetize_constr_class(cls, ifc_class): pass
+    def assetize_active_constr_type(cls, from_browser): pass
 
 
 @interface

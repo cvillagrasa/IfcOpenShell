@@ -35,19 +35,20 @@ from mathutils import Vector, Matrix
 
 
 class MepGenerator:
-    def __init__(self, relating_type):
-        self.relating_type = relating_type
+    def __init__(self, relating_type_entity):
+        self.relating_type_entity = relating_type_entity
 
     def generate(self):
         self.file = tool.Ifc.get()
         self.collection = bpy.context.view_layer.active_layer_collection.collection
 
-        if self.relating_type.is_a("IfcCableCarrierSegmentType"):
+        if self.relating_type_entity.is_a("IfcCableCarrierSegmentType"):
             pass
-        elif self.relating_type.is_a("IfcCableSegmentType"):
+        elif self.relating_type_entity.is_a("IfcCableSegmentType"):
             pass
-        elif self.relating_type.is_a("IfcDuctSegmentType"):
-            dimensions = ifcopenshell.util.element.get_psets(self.relating_type).get("Pset_DuctSegmentTypeCommon") or {}
+        elif self.relating_type_entity.is_a("IfcDuctSegmentType"):
+            dimensions = ifcopenshell.util.element.get_psets(
+                self.relating_type_entity).get("Pset_DuctSegmentTypeCommon") or {}
             shape = dimensions.get("Shape") or dimensions.get("CrossSectionShape")
 
             if shape == "RECTANGULAR":
@@ -56,7 +57,7 @@ class MepGenerator:
                 self.length = 1
 
                 return self.derive_from_cursor()
-        elif self.relating_type.is_a("IfcPipeSegmentType"):
+        elif self.relating_type_entity.is_a("IfcPipeSegmentType"):
             pass
 
     def derive_from_cursor(self):
@@ -85,10 +86,10 @@ class MepGenerator:
         mesh = bpy.data.meshes.new(name="Segment")
         mesh.from_pydata(verts, [], faces)
 
-        ifc_classes = ifcopenshell.util.type.get_applicable_entities(self.relating_type.is_a(), self.file.schema)
+        ifc_classes = ifcopenshell.util.type.get_applicable_entities(self.relating_type_entity.is_a(), self.file.schema)
         ifc_class = ifc_classes[0]
 
-        obj = bpy.data.objects.new(tool.Model.generate_occurrence_name(self.relating_type, ifc_class), mesh)
+        obj = bpy.data.objects.new(tool.Model.generate_occurrence_name(self.relating_type_entity, ifc_class), mesh)
         obj.location = self.location
         obj.rotation_euler[0] = math.pi / 2
         obj.rotation_euler[2] = math.pi / 2
@@ -102,7 +103,7 @@ class MepGenerator:
 
         element = tool.Ifc.get_entity(obj)
 
-        blenderbim.core.type.assign_type(tool.Ifc, tool.Type, element=element, type=self.relating_type)
+        blenderbim.core.type.assign_type(tool.Ifc, tool.Type, element=element, type=self.relating_type_entity)
         pset = ifcopenshell.api.run("pset.add_pset", self.file, product=element, name="EPset_Parametric")
         ifcopenshell.api.run("pset.edit_pset", self.file, pset=pset, properties={"Engine": "BlenderBIM.Mep"})
 

@@ -19,72 +19,81 @@
 import bpy
 from blenderbim.bim.module.model.data import AuthoringData
 from bpy.types import PropertyGroup
+import blenderbim.core.model as core
+import blenderbim.tool as tool
+from blenderbim.bim.module.model.handler import ConstrTypeEntityNotFound
 
 
-def get_ifc_class(self, context):
+def get_ifc_classes(self, context):
     if not AuthoringData.is_loaded:
         AuthoringData.load()
-    return AuthoringData.data["ifc_classes"]
+    return [(ifc_class, ifc_class, "") for ifc_class in AuthoringData.data["constr_classes"]]
 
 
-def get_relating_type(self, context):
+def get_relating_types(self, context):
     if not AuthoringData.is_loaded:
         AuthoringData.load()
-    return AuthoringData.data["relating_types_ids"]
+    return [
+        (str(entity.id()), entity.Name, entity.Description or "")
+        for entity in AuthoringData.data["constr_entities"]
+    ]
 
 
-def get_relating_type_browser(self, context):
+def get_relating_types_browser(self, context):
     if not AuthoringData.is_loaded:
         AuthoringData.load()
-    return AuthoringData.data["relating_types_ids_browser"]
+    return [
+        (str(entity.id()), entity.Name, entity.Description or "")
+        for entity in AuthoringData.data["constr_entities_browser"]
+    ]
 
 
-def update_icon_id(self, context, browser=False):
-    ifc_class = self.ifc_class_browser if browser else self.ifc_class
-    relating_type_id = self.relating_type_id_browser if browser else self.relating_type_id
-    relating_type = AuthoringData.relating_type_name_by_id(ifc_class, relating_type_id)
-    if (
-        ifc_class not in AuthoringData.data["preview_constr_types"]
-        or relating_type_id not in AuthoringData.data["preview_constr_types"][ifc_class]
-    ) and relating_type is not None:
-        if not AuthoringData.assetize_relating_type_from_selection(browser=browser):
+def update_icon_id(self, context, from_browser=False):
+    ifc_class = self.ifc_class_browser if from_browser else self.ifc_class
+    relating_type_id = int(self.relating_type_id_browser if from_browser else self.relating_type_id)
+    relating_type = core.get_relating_type_name_by_id(tool.Model, ifc_class, relating_type_id)
+
+    if ifc_class not in self.constr_classes or relating_type not in self.constr_classes[ifc_class].constr_types:
+        try:
+            core.assetize_active_constr_type(tool.Model, from_browser=from_browser)
+        except ConstrTypeEntityNotFound:
             return
-    self.icon_id = AuthoringData.data["preview_constr_types"][ifc_class][relating_type_id]["icon_id"]
+    self.icon_id = self.constr_classes[ifc_class].constr_types[relating_type].icon_id
 
 
 def update_ifc_class(self, context):
-    AuthoringData.load_ifc_classes()
-    AuthoringData.load_relating_types()
+    AuthoringData.load_constr_classes()
+    AuthoringData.load_constr_entities()
     if not self.updating:
         update_icon_id(self, context)
 
 
 def update_ifc_class_browser(self, context):
-    AuthoringData.load_ifc_classes()
-    AuthoringData.load_relating_types_browser()
+    AuthoringData.load_constr_classes()
+    AuthoringData.load_constr_entities_browser()
     if self.updating:
         return
     ifc_class = self.ifc_class_browser
-    relating_type_info = AuthoringData.relating_type_info(ifc_class)
-    if relating_type_info is None or not relating_type_info.fully_loaded:
-        AuthoringData.assetize_constr_class(ifc_class)
+    constr_class_info = core.get_constr_class_info(tool.Model, ifc_class)
+    if constr_class_info is None or not constr_class_info.fully_loaded:
+        core.assetize_constr_class(tool.Model, ifc_class)
 
 
 def update_relating_type(self, context):
-    AuthoringData.load_relating_types()
+    AuthoringData.load_constr_entities()
     if not self.updating:
         update_icon_id(self, context)
 
 
 def update_relating_type_browser(self, context):
-    AuthoringData.load_relating_types_browser()
+    AuthoringData.load_constr_entities_browser()
     if not self.updating:
-        update_icon_id(self, context, browser=True)
+        update_icon_id(self, context, from_browser=True)
 
 
 def update_relating_type_by_name(self, context):
-    AuthoringData.load_relating_types()
-    relating_type_id = AuthoringData.relating_type_id_by_name(self.ifc_class, self.relating_type)
+    AuthoringData.load_constr_entities()
+    relating_type_id = core.get_relating_type_id_by_name(tool.Model, self.ifc_class, self.relating_type)
     if relating_type_id is not None:
         self.relating_type_id = relating_type_id
 
@@ -92,24 +101,36 @@ def update_relating_type_by_name(self, context):
 def update_preview_multiple(self, context):
     if self.preview_multiple_constr_types:
         ifc_class = self.ifc_class
-        relating_type_info = AuthoringData.relating_type_info(ifc_class)
-        if relating_type_info is None or not relating_type_info.fully_loaded:
-            AuthoringData.assetize_constr_class(ifc_class)
+        constr_class_info = core.get_constr_class_info(tool.Model, ifc_class)
+        if constr_class_info is None or not constr_class_info.fully_loaded:
+            core.assetize_constr_class(tool.Model, ifc_class)
     else:
         update_relating_type(self, context)
 
 
+class ConstrTypeInfo(PropertyGroup):
+    name: bpy.props.StringProperty(name="Construction type")
+    icon_id: bpy.props.IntProperty(name="Icon ID")
+    object: bpy.props.PointerProperty(name="Object", type=bpy.types.Object)
+
+
+class ConstrClassInfo(PropertyGroup):
+    name: bpy.props.StringProperty(name="Construction class")
+    constr_types: bpy.props.CollectionProperty(type=ConstrTypeInfo)
+    fully_loaded: bpy.props.BoolProperty(default=False)
+
+
 class BIMModelProperties(PropertyGroup):
-    ifc_class: bpy.props.EnumProperty(items=get_ifc_class, name="Construction Class", update=update_ifc_class)
+    ifc_class: bpy.props.EnumProperty(items=get_ifc_classes, name="Construction Class", update=update_ifc_class)
     ifc_class_browser: bpy.props.EnumProperty(
-        items=get_ifc_class, name="Construction Class", update=update_ifc_class_browser
+        items=get_ifc_classes, name="Construction Class", update=update_ifc_class_browser
     )
     relating_type: bpy.props.StringProperty(update=update_relating_type_by_name)
     relating_type_id: bpy.props.EnumProperty(
-        items=get_relating_type, name="Construction Type", update=update_relating_type
+        items=get_relating_types, name="Construction Type", update=update_relating_type
     )
     relating_type_id_browser: bpy.props.EnumProperty(
-        items=get_relating_type_browser, name="Construction Type", update=update_relating_type_browser
+        items=get_relating_types_browser, name="Construction Type", update=update_relating_type_browser
     )
     icon_id: bpy.props.IntProperty()
     preview_multiple_constr_types: bpy.props.BoolProperty(default=False, update=update_preview_multiple)
@@ -119,14 +140,5 @@ class BIMModelProperties(PropertyGroup):
         name="Occurrence Name Style",
     )
     occurrence_name_function: bpy.props.StringProperty(name="Occurrence Name Function")
-    getter_enum = {"ifc_class": get_ifc_class, "relating_type": get_relating_type}
-
-
-def get_relating_type_info(self, context):
-    return AuthoringData.relating_types(ifc_class=self.name)
-
-
-class ConstrTypeInfo(PropertyGroup):
-    name: bpy.props.StringProperty(name="Construction class")
-    relating_type: bpy.props.EnumProperty(name="Construction type", items=get_relating_type_info)
-    fully_loaded: bpy.props.BoolProperty(default=False)
+    getter_enum = {"ifc_class": get_ifc_classes, "relating_type": get_relating_types}
+    constr_classes: bpy.props.CollectionProperty(type=ConstrClassInfo)

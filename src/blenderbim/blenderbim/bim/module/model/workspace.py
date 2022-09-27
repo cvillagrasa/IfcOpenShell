@@ -66,12 +66,12 @@ class BimTool(WorkSpaceTool):
         if not AuthoringData.is_loaded:
             AuthoringData.load()
 
-        ifc_classes = AuthoringData.data["ifc_classes"] if "ifc_classes" in AuthoringData.data else False
-        relating_types_ids = (
-            AuthoringData.data["relating_types_ids"] if "relating_types_ids" in AuthoringData.data else False
+        constr_classes = AuthoringData.data["constr_classes"] if "constr_classes" in AuthoringData.data else False
+        constr_entities = (
+            AuthoringData.data["constr_entities"] if "constr_entities" in AuthoringData.data else False
         )
 
-        if ifc_classes and relating_types_ids and not props.icon_id:
+        if constr_classes and constr_entities and not props.icon_id:
             # hack Dion won't like to show a preview also on the first time the sidebar is shown
             bpy.app.timers.register(lambda: prop.update_ifc_class_browser(props, context))
             bpy.app.timers.register(lambda: prop.update_relating_type(props, context))
@@ -81,18 +81,18 @@ class BimTool(WorkSpaceTool):
 
         if is_tool_header:
             row = layout.row(align=True)
-            if ifc_classes:
+            if constr_classes:
                 row.label(text="", icon="FILE_VOLUME")
                 row.prop(data=props, property="ifc_class", text="")
             else:
                 row.label(text="No Construction Class", icon="FILE_VOLUME")
             row = layout.row(align=True)
-            if relating_types_ids:
+            if constr_entities:
                 row.label(text="", icon="FILE_3D")
                 prop_with_search(row, props, "relating_type_id", text="")
             else:
                 row.label(text="No Construction Type", icon="FILE_3D")
-            if ifc_classes:
+            if constr_classes:
                 row = layout.row()
                 row.operator("bim.display_constr_types", icon="TRIA_DOWN", text="")
             row = layout.row(align=True)
@@ -101,18 +101,18 @@ class BimTool(WorkSpaceTool):
             row.label(text=f" Add")
         else:
             row = layout.row(align=True)
-            if ifc_classes:
+            if constr_classes:
                 row.label(text="", icon="FILE_VOLUME")
                 prop_with_search(row, props, "ifc_class", text="")
             else:
                 row.label(text="No Construction Class", icon="FILE_VOLUME")
             row = layout.row(align=True)
-            if relating_types_ids:
+            if constr_entities:
                 row.label(text="", icon="FILE_3D")
                 prop_with_search(row, props, "relating_type_id", text="")
             else:
                 row.label(text="No Construction Type", icon="FILE_3D")
-            if is_sidebar and ifc_classes and relating_types_ids:
+            if is_sidebar and constr_classes and constr_entities:
                 box = layout.box()
                 box.template_icon(icon_value=props.icon_id, scale=8)
                 row = layout.row()
@@ -122,13 +122,13 @@ class BimTool(WorkSpaceTool):
                 if relating_type_id.isnumeric():
                     op.relating_type_id = int(relating_type_id)
 
-            if ifc_classes:
+            if constr_classes:
                 row = layout.row(align=True)
                 row.label(text="", icon="EVENT_SHIFT")
                 row.label(text="", icon="EVENT_A")
                 row.label(text=f" Add Type Instance")
 
-        if ifc_classes:
+        if constr_classes:
             if ifc_class == "IfcWallType":
                 row = layout.row()
                 row.label(text="Join")

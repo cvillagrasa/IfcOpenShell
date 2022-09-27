@@ -17,14 +17,14 @@
 # along with BlenderBIM Add-on.  If not, see <http://www.gnu.org/licenses/>.
 
 import bpy
-from . import handler, prop, ui, grid, product, wall, slab, stair, opening, pie, workspace, profile
+from . import handler, prop, ui, grid, operator, wall, slab, stair, opening, pie, workspace, profile
 
 classes = (
-    product.AddEmptyType,
-    product.AddConstrTypeInstance,
-    product.DisplayConstrTypes,
-    product.AlignProduct,
-    product.DynamicallyVoidProduct,
+    operator.AddEmptyType,
+    operator.AddConstrTypeInstance,
+    operator.DisplayConstrTypes,
+    operator.AlignProduct,
+    operator.DynamicallyVoidProduct,
     workspace.Hotkey,
     wall.JoinWall,
     wall.AlignWall,
@@ -33,8 +33,9 @@ classes = (
     wall.WallPrototypeVTX,
     opening.AddElementOpening,
     profile.ExtendProfile,
-    prop.BIMModelProperties,
     prop.ConstrTypeInfo,
+    prop.ConstrClassInfo,
+    prop.BIMModelProperties,
     ui.BIM_PT_authoring,
     ui.DisplayConstrTypesUI,
     ui.HelpConstrTypes,
@@ -55,11 +56,10 @@ def register():
     if not bpy.app.background:
         bpy.utils.register_tool(workspace.BimTool, after={"builtin.scale_cage"}, separator=True, group=True)
     bpy.types.Scene.BIMModelProperties = bpy.props.PointerProperty(type=prop.BIMModelProperties)
-    bpy.types.Scene.ConstrTypeInfo = bpy.props.CollectionProperty(type=prop.ConstrTypeInfo)
     bpy.types.VIEW3D_MT_mesh_add.append(grid.add_object_button)
     bpy.types.VIEW3D_MT_mesh_add.append(stair.add_object_button)
     bpy.types.VIEW3D_MT_mesh_add.append(opening.add_object_button)
-    bpy.types.VIEW3D_MT_add.append(product.add_empty_type_button)
+    bpy.types.VIEW3D_MT_add.append(operator.add_empty_type_button)
     bpy.app.handlers.load_post.append(handler.load_post)
     wm = bpy.context.window_manager
     if wm.keyconfigs.addon:
@@ -73,12 +73,11 @@ def unregister():
     if not bpy.app.background:
         bpy.utils.unregister_tool(workspace.BimTool)
     del bpy.types.Scene.BIMModelProperties
-    del bpy.types.Scene.ConstrTypeInfo
     bpy.app.handlers.load_post.remove(handler.load_post)
     bpy.types.VIEW3D_MT_mesh_add.remove(grid.add_object_button)
     bpy.types.VIEW3D_MT_mesh_add.remove(stair.add_object_button)
     bpy.types.VIEW3D_MT_mesh_add.remove(opening.add_object_button)
-    bpy.types.VIEW3D_MT_add.remove(product.add_empty_type_button)
+    bpy.types.VIEW3D_MT_add.remove(operator.add_empty_type_button)
     wm = bpy.context.window_manager
     kc = wm.keyconfigs.addon
     if kc:

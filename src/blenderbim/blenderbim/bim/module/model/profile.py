@@ -34,6 +34,8 @@ from mathutils import Vector, Matrix
 from ifcopenshell.api.pset.data import Data as PsetData
 from ifcopenshell.api.material.data import Data as MaterialData
 from blenderbim.bim.module.geometry.helper import Helper
+from blenderbim.bim.module.model.base import BaseConstrTypeGenerator
+import warnings
 
 
 def element_listener(element, obj):
@@ -92,42 +94,78 @@ def mode_callback(obj, data):
             obj.matrix_world.translation = new_origin
 
 
-class DumbProfileGenerator:
-    def __init__(self, relating_type):
-        self.relating_type = relating_type
+class DumbProfileGenerator(BaseConstrTypeGenerator):
+    obj = None
+    element = None
+    material = None
+    ifc_class = None
+    collection = None
+    collection_obj = None
+    relating_type_entity = None
+    location = None
+    instance_class = None
 
-    def generate(self):
+    def __init__(self, relating_type_entity):
         self.file = IfcStore.get_file()
-        unit_scale = ifcopenshell.util.unit.calculate_unit_scale(IfcStore.get_file())
-        material = ifcopenshell.util.element.get_material(self.relating_type)
-        if material and material.is_a("IfcMaterialProfileSet"):
-            self.profile_set = material
-        else:
+        self.relating_type_entity = relating_type_entity
+        self.location = (0., 0., 0.)
+
+    def generate(self, from_cursor=True):
+        # unit_scale = ifcopenshell.util.unit.calculate_unit_scale(self.file)
+        self.get_material()
+
+        if not self.material or not self.material.is_a("IfcMaterialProfileSet"):
+            warnings.warn(f"Material is an {self.material.is_a()}, not an IfcProfileSet")
             return
 
-        self.collection = bpy.context.view_layer.active_layer_collection.collection
-        self.collection_obj = bpy.data.objects.get(self.collection.name)
-        self.length = 3
-        self.rotation = 0
-        self.location = Vector((0, 0, 0))
-        return self.derive_from_cursor()
+        if from_cursor:
+            self.location = bpy.context.scene.cursor.location
 
-    def derive_from_cursor(self):
-        self.location = bpy.context.scene.cursor.location
-        return self.create_profile()
+        ifc_classes = ifcopenshell.util.type.get_applicable_entities(self.relating_type_entity.is_a(), self.file.schema)
+        self.instance_class = self.cull_deprecated_standard_cases(ifc_classes)
+        # self.ifc_class ¿?
 
-    def create_profile(self):
-        # A cube
-        verts = [
-            Vector((-1, -1, -1)),
-            Vector((-1, -1, 1)),
-            Vector((-1, 1, -1)),
-            Vector((-1, 1, 1)),
-            Vector((1, -1, -1)),
-            Vector((1, -1, 1)),
-            Vector((1, 1, -1)),
-            Vector((1, 1, 1)),
-        ]
+        self.generate_obj(bpy.context)
+        self.set_height_to_collection()
+        self.assign_ifc_class(should_add_representation=False)
+        self.rotate_if_needed()
+        self.assign_type()
+
+        profile_set_usage = ifcopenshell.util.element.get_material(self.element)
+        pset = ifcopenshell.api.run("pset.add_pset", self.file, product=self.element, name="EPset_Parametric")
+        ifcopenshell.api.run("pset.edit_pset", self.file, pset=pset, properties={"Engine": "BlenderBIM.DumbProfile"})
+        MaterialData.load(self.file)
+        try:
+            self.obj.select_set(True)
+        except RuntimeError:
+
+            def msg(self, context):
+                txt = "The created object could not be assigned to a collection. "
+                txt += "Has any IfcSpatialElement been deleted?"
+                self.layout.label(text=txt)
+
+            bpy.context.window_manager.popup_menu(msg, title="Error", icon="ERROR")
+        return self.obj
+
+    @staticmethod
+    def cull_deprecated_standard_cases(ifc_classes):
+        culled = [ifc_class for ifc_class in ifc_classes if "StandardCase" not in ifc_class]
+        return culled[0] if len(culled) > 0 else None
+
+    def set_height_to_collection(self):
+        if self.collection_obj and self.collection_obj.BIMObjectProperties.ifc_definition_id:
+            self.obj.location[2] = self.collection_obj.location[2]
+
+    def rotate_if_needed(self):
+        ifc_classes_lying_sideways_by_default = ["IfcBeamType", "IfcMemberType"]
+        if self.relating_type_entity.is_a() in ifc_classes_lying_sideways_by_default:
+            self.obj.rotation_euler[0] = math.pi / 2
+            self.obj.rotation_euler[2] = math.pi / 2
+
+    @staticmethod
+    def new_cube_mesh(size=2.):
+        coords = [-size / 2, +size / 2]
+        verts = [Vector(tuple([i, j, k])) for i in coords for j in coords for k in coords]
         edges = []
         faces = [
             [0, 2, 3, 1],
@@ -137,42 +175,9 @@ class DumbProfileGenerator:
             [1, 3, 7, 5],
             [0, 2, 6, 4],
         ]
-
-        ifc_classes = ifcopenshell.util.type.get_applicable_entities(self.relating_type.is_a(), self.file.schema)
-        # Standard cases are deprecated, so let's cull them
-        ifc_class = [c for c in ifc_classes if "StandardCase" not in c][0]
-
         mesh = bpy.data.meshes.new(name="Dumb Profile")
         mesh.from_pydata(verts, edges, faces)
-        obj = bpy.data.objects.new(tool.Model.generate_occurrence_name(self.relating_type, ifc_class), mesh)
-        obj.location = self.location
-        if self.collection_obj and self.collection_obj.BIMObjectProperties.ifc_definition_id:
-            obj.location[2] = self.collection_obj.location[2]
-        self.collection.objects.link(obj)
-
-        bpy.ops.bim.assign_class(obj=obj.name, ifc_class=ifc_class, should_add_representation=False)
-
-        if self.relating_type.is_a() in ["IfcBeamType", "IfcMemberType"]:
-            obj.rotation_euler[0] = math.pi / 2
-            obj.rotation_euler[2] = math.pi / 2
-
-        element = self.file.by_id(obj.BIMObjectProperties.ifc_definition_id)
-        blenderbim.core.type.assign_type(tool.Ifc, tool.Type, element=tool.Ifc.get_entity(obj), type=self.relating_type)
-        profile_set_usage = ifcopenshell.util.element.get_material(element)
-        pset = ifcopenshell.api.run("pset.add_pset", self.file, product=element, name="EPset_Parametric")
-        ifcopenshell.api.run("pset.edit_pset", self.file, pset=pset, properties={"Engine": "BlenderBIM.DumbProfile"})
-        MaterialData.load(self.file)
-        try:
-            obj.select_set(True)
-        except RuntimeError:
-
-            def msg(self, context):
-                txt = "The created object could not be assigned to a collection. "
-                txt += "Has any IfcSpatialElement been deleted?"
-                self.layout.label(text=txt)
-
-            bpy.context.window_manager.popup_menu(msg, title="Error", icon="ERROR")
-        return obj
+        return mesh
 
 
 class DumbProfileRegenerator:

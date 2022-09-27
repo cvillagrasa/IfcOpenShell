@@ -102,3 +102,7 @@ def load_post(*args):
         "BlenderBIM.DumbProfile.RegenerateFromType",
         profile.DumbProfileRegenerator().regenerate_from_type,
     )
+
+
+class ConstrTypeEntityNotFound(Exception):
+    pass
