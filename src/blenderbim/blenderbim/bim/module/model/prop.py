@@ -146,6 +146,7 @@ class ConstrBrowserState(PropertyGroup):
     far_away_y: bpy.props.IntProperty(default=10)  # useful to close popup operators
     updating: bpy.props.BoolProperty()
     update_delay: bpy.props.FloatProperty(default=3e-2)
+    modal_running: bpy.props.BoolProperty(default=False)
 
 
 class BIMModelProperties(PropertyGroup):

@@ -195,64 +195,75 @@ class AddConstrTypeInstance(bpy.types.Operator):
             pass  # Dumb block generator? Eh? :)
 
 
-class DisplayConstrTypes(bpy.types.Operator):
-    bl_idname = "bim.display_constr_types"
-    bl_label = "Browse Construction Types"
-    bl_options = {"REGISTER"}
-    bl_description = "Display all available Construction Types to add new instances"
-
-    def invoke(self, context, event):
-        if not AuthoringData.is_loaded:
-            AuthoringData.load()
-        props = context.scene.BIMModelProperties
-        ifc_class = props.ifc_class
-        constr_class_info = AuthoringData.constr_class_info(ifc_class)
-        if constr_class_info is None or not constr_class_info.fully_loaded:
-            AuthoringData.assetize_constr_class(ifc_class)
-        bpy.ops.bim.display_constr_types_ui("INVOKE_DEFAULT")
-        return {"FINISHED"}
-
-
-class ReinvokeOperator(bpy.types.Operator):
-    bl_idname = "bim.reinvoke_operator"
-    bl_label = "Reinvoke Popup Operator"
-    bl_options = {"REGISTER"}
-    bl_description = "Reinvoke a popup operator"
-    operator: bpy.props.StringProperty()
+class DisplayConstrTypesModal(bpy.types.Operator):
+    bl_idname = "bim.display_constr_types_modal"
+    bl_label = "ModalPopup Modal"
+    bl_options = {'INTERNAL'}
+    _timer = None
 
     def execute(self, context):
-        return {"FINISHED"}
+        props = context.scene.BIMModelProperties
+        browser_state = props.constr_browser_state
+        if browser_state.modal_running:
+            print("modal already running")
+            return {"CANCELLED"}
+        print("executing modal")
+        browser_state.modal_running = True
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(browser_state.update_delay, window=context.window)
+        wm.modal_handler_add(self)
+        return {"RUNNING_MODAL"}
+
+    def modal(self, context, event):
+        props = context.scene.BIMModelProperties
+        browser_state = props.constr_browser_state
+        browser_state.modal_running = True
+        if event.type == "TIMER":
+            print("running modal")
+            if self.previews_are_ready(context):
+                context.window_manager.event_timer_remove(self._timer)
+                context.scene.BIMModelProperties.constr_browser_state.modal_running = False
+                bpy.ops.bim.display_constr_types('INVOKE_DEFAULT', from_modal=True)
+                print("cancelling modal")
+                return {"FINISHED"}
+            else:
+                print(f"assetizing class {context.scene.BIMModelProperties.ifc_class_browser}")
+                AuthoringData.assetize_constr_class(context.scene.BIMModelProperties.ifc_class_browser)
+        return {"PASS_THROUGH"}
+
+    def previews_are_ready(self, context):
+        print("checking if previews are ready")
+        ready = True
+        props = context.scene.BIMModelProperties
+        ifc_class = props.ifc_class_browser
+        relating_types = AuthoringData.relating_types_browser()
+        print(len(props.constr_classes))
+        if ifc_class in props.constr_classes:
+            print("ifc_class in constr_classes")
+            for relating_type_id, name, desc in relating_types:
+                print(f"checking relating type id {relating_type_id}")
+                constr_class_info = props.constr_classes[ifc_class]
+                constr_types_info = constr_class_info.constr_types
+                if relating_type_id not in constr_types_info:
+                    print(constr_types_info)
+                    ready = False
+                    break
+        else:
+            ready = False
+        print(f"checked if previews are ready: {ready}")
+        return ready
+
+
+class StoreCursorPosition(bpy.types.Operator):
+    bl_idname = "bim.store_cursor_position"
+    bl_label = "Store Cursor Position"
+    bl_options = {"REGISTER"}
+    cursor: bpy.props.BoolProperty(default=True)
+    window: bpy.props.BoolProperty(default=True)
 
     def invoke(self, context, event):
-        browser_state = context.scene.BIMModelProperties.constr_browser_state
-        store_cursor_position(context, event, window=False)
-        cursor_x, cursor_y = browser_state.cursor_x, browser_state.cursor_y
-        window_x, window_y = browser_state.window_x, browser_state.window_y
-        window = context.window
-        operator = self.operator
-        self.move_cursor_away(context, window)
-
-        def move_cursor_to_window():
-            window.cursor_warp(window_x, window_y)
-
-        def run_operator(operator, *args, **kwargs):
-            reduce(lambda x, arg: getattr(x, arg), operator.split("."), bpy.ops)(*args, **kwargs)
-
-        def reinvoke():
-            run_operator(operator, "INVOKE_DEFAULT", reinvoked=True)
-            window.cursor_warp(cursor_x, cursor_y)
-
-        bpy.app.timers.register(move_cursor_to_window, first_interval=browser_state.update_delay)
-        bpy.app.timers.register(reinvoke, first_interval=3*browser_state.update_delay)
+        store_cursor_position(context, event, cursor=self.cursor, window=self.window)
         return {"FINISHED"}
-
-    def move_cursor_away(self, context, window):  # closes current popup
-        browser_state = context.scene.BIMModelProperties.constr_browser_state
-        window.cursor_warp(browser_state.far_away_x, browser_state.far_away_y)
-
-    @staticmethod
-    def run_operator(operator, *args, **kwargs):
-        reduce(lambda x, arg: getattr(x, arg), operator.split("."), bpy.ops)(*args, **kwargs)
 
 
 class AlignProduct(bpy.types.Operator):

@@ -97,7 +97,8 @@ class BimTool(WorkSpaceTool):
                 row.label(text="No Construction Type", icon="FILE_3D")
             if ifc_classes:
                 row = layout.row()
-                row.operator("bim.display_constr_types", icon="TRIA_DOWN", text="")
+                op = row.operator("bim.display_constr_types", icon="TRIA_DOWN", text="")
+                op.from_modal = False
 
                 row = layout.row(align=True)
                 row.label(text="", icon="EVENT_SHIFT")

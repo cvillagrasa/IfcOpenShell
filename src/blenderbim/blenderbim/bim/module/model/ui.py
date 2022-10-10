@@ -21,6 +21,7 @@ from bpy.types import Panel, Operator, Menu
 from blenderbim.bim.module.model.data import AuthoringData
 from blenderbim.bim.module.model.prop import store_cursor_position
 from blenderbim.bim.helper import prop_with_search, close_operator_panel
+import queue
 
 
 class BIM_PT_authoring(Panel):
@@ -37,37 +38,32 @@ class BIM_PT_authoring(Panel):
         row.operator("bim.align_wall", icon="ANCHOR_BOTTOM", text="Int.").align_type = "INTERIOR"
 
 
-class DisplayConstrTypesUI(Operator):
-    bl_idname = "bim.display_constr_types_ui"
+class DisplayConstrTypes(bpy.types.Operator):
+    bl_idname = "bim.display_constr_types"
     bl_label = "Browse Construction Types"
     bl_options = {"REGISTER"}
     bl_description = "Display all available Construction Types to add new instances"
-    reinvoked: bpy.props.BoolProperty(default=False)
-
-    def execute(self, context):
-        return {"FINISHED"}
+    _queue = None
+    from_modal: bpy.props.BoolProperty(default=False)
 
     def invoke(self, context, event):
-        store_cursor_position(context, event, window=not self.reinvoked)
-        return context.window_manager.invoke_popup(self, width=550)
+        print("running popup")
+        if self.from_modal:
+            self.move_cursor_to_window()
+        else:
+            store_cursor_position(context, event)
+            self.move_cursor_away()
+            bpy.ops.bim.display_constr_types_modal()
+        popup = context.window_manager.invoke_popup(self, width=550)
+        self.move_cursor_back()
+        return popup
 
-    def reinvoke(self, context):
-        browser_state = context.scene.BIMModelProperties.constr_browser_state
-
-        def set_updating_transaction():
-            browser_state.updating = True
-
-        def run_operator():
-            bpy.ops.bim.reinvoke_operator(
-                "INVOKE_DEFAULT", operator="bim.display_constr_types_ui"
-            )
-            browser_state.updating = False
-
-        if not browser_state.updating:
-            bpy.app.timers.register(set_updating_transaction)
-            bpy.app.timers.register(run_operator, first_interval=browser_state.update_delay)
+    def execute(self, context):
+        print("executing popup")
+        return {'FINISHED'}
 
     def draw(self, context):
+        print("drawing")
         props = context.scene.BIMModelProperties
 
         if AuthoringData.data["ifc_classes"]:
@@ -96,9 +92,13 @@ class DisplayConstrTypesUI(Operator):
                 if relating_type_id in constr_types_info:
                     icon_id = constr_types_info[relating_type_id].icon_id
                     row.template_icon(icon_value=icon_id, scale=6.0)
+                    print(f"{relating_type_id} info is in {ifc_class}")
                 else:
-                    self.reinvoke(context)
+                    self.reinvoke()
                     return
+            else:
+                self.reinvoke()
+                return
 
             row = box.row()
             op = row.operator("bim.add_constr_type_instance", icon="ADD")
@@ -117,6 +117,59 @@ class DisplayConstrTypesUI(Operator):
         row = self.layout.row()
         row.alignment = "RIGHT"
         row.operator("bim.help_relating_types", text="", icon="QUESTION")
+
+    @staticmethod
+    def move_cursor_away():  # closes current popup
+        browser_state = bpy.context.scene.BIMModelProperties.constr_browser_state
+        bpy.context.window.cursor_warp(browser_state.far_away_x, browser_state.far_away_y)
+
+    @staticmethod
+    def move_cursor_to_window():  # moves cursor back to position from where popup was invoked
+        browser_state = bpy.context.scene.BIMModelProperties.constr_browser_state
+        bpy.context.window.cursor_warp(browser_state.window_x, browser_state.window_y)
+
+    @staticmethod
+    def move_cursor_back():  # moves cursor back to its last position
+        browser_state = bpy.context.scene.BIMModelProperties.constr_browser_state
+        bpy.context.window.cursor_warp(browser_state.cursor_x, browser_state.cursor_y)
+
+    def get_queue(self):
+        return queue.Queue() if self._queue is None else self._queue
+
+    def reinvoke(self):
+        move_cursor_away = self.move_cursor_away
+        execution_queue = self.get_queue()
+        browser_state = bpy.context.scene.BIMModelProperties.constr_browser_state
+        update_delay = browser_state.update_delay
+
+        if browser_state.updating:
+            print("already reinvoking, cancelling...")
+            return
+
+        def run_modal():
+            bpy.ops.bim.display_constr_types_modal('INVOKE_DEFAULT')
+
+        def store_cursor_position_from_queue():
+            bpy.ops.bim.store_cursor_position("INVOKE_DEFAULT", window=False)
+
+        def execute_queued_functions():
+            while not execution_queue.empty():
+                function = execution_queue.get()
+                function()
+            return update_delay
+
+        def start_updating_state():
+            bpy.context.scene.BIMModelProperties.constr_browser_state.updating = True
+
+        def end_updating_state():
+            bpy.context.scene.BIMModelProperties.constr_browser_state.updating = False
+
+        execution_queue.put(start_updating_state)
+        execution_queue.put(store_cursor_position_from_queue)
+        execution_queue.put(move_cursor_away)
+        execution_queue.put(run_modal)
+        execution_queue.put(end_updating_state)
+        bpy.app.timers.register(execute_queued_functions, first_interval=update_delay)
 
 
 class HelpConstrTypes(Operator):

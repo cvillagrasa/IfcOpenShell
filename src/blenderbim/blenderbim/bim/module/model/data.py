@@ -122,18 +122,26 @@ class AuthoringData:
         constr_class_occurrences = cls.constr_class_entities(ifc_class)
         constr_classes = cls.props.constr_classes
 
+        print(f"assetize constr class: assetizing {ifc_class}")
+        count = 0
         for constr_class_entity in constr_class_occurrences:
+            count += 1
             if (
                 ifc_class not in constr_classes
                 or constr_class_entity.Name not in constr_classes[ifc_class].constr_types
             ):
+                print(f"assetize constr class: assetizing {ifc_class} ... {count}")
                 obj = tool.Ifc.get_object(constr_class_entity)
                 cls.assetize_object(obj, ifc_class, constr_class_entity)
+            else:
+                print(f"assetize constr class: skipping {ifc_class}...")
         cls.constr_class_info(ifc_class).fully_loaded = True
+        print(f"assetize constr class: resetting props")
         cls.props.updating = True
         cls.props.ifc_class = selected_ifc_class
         cls.props.relating_type_id = selected_relating_type_id
         cls.props.updating = False
+        print(f"assetize constr class: props successfully reset")
 
     @classmethod
     def assetize_object(cls, obj, ifc_class, ifc_class_entity, from_selection=False):
@@ -155,8 +163,10 @@ class AuthoringData:
 
         def wait_for_asset_previews_generation(check_interval_seconds=interval):
             if blender33_or_above and bpy.app.is_job_running("RENDER_PREVIEW"):
+                print("waiting for asset generation...")  # bpy.app.is_job_running keeps being True for small intervals
                 return check_interval_seconds
             else:
+                print("assigning generated asset to collections")
                 if ifc_class not in cls.props.constr_classes:
                     cls.props.constr_classes.add().name = ifc_class
                 constr_class_info = cls.props.constr_classes[ifc_class]
